@@ -1,0 +1,19 @@
+{
+    "name": "SAINT",
+    "image": "pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel",
+    "runArgs": [
+        "--gpus=all",
+        "--ipc=host"
+    ],
+    "postCreateCommand": [
+        "nvidia-smi" 
+    ],
+    "customizations":{
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-toolsai.jupyter"
+            ]
+        }
+    }
+}
