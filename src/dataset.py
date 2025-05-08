@@ -67,22 +67,77 @@ class DatasetTabular(Dataset):
     
 def generate_splits(dataset_size, num_supervised_train_data, 
                       validation_split, test_split=0.0, 
-                      random_seed=1234, shuffle_dataset=True,):
+                      random_seed=1234, shuffle_dataset=True, response_df=None):
     """Split dataset indices into train, val, and test 
     for supervised and self-supervised training
+    
+    For survival tasks, ensures balanced censored/uncensored samples in each split
     """
 
     # Create data indices for training and validation splits:
     indices = list(range(dataset_size))
-
-    split_val = int(validation_split * dataset_size)
-    split_test = int(test_split * dataset_size)
     
     if shuffle_dataset:
         np.random.seed(random_seed)
         np.random.shuffle(indices)
-
-    # should not change for all operations
+    
+    # For survival analysis with censoring information provided
+    if response_df is not None and 'event' in response_df.columns and 'time' in response_df.columns:
+        # Separate indices for censored (event=0) and uncensored (event=1) samples
+        censored_indices = [i for i in indices if response_df.iloc[i]['event'] == 0]
+        uncensored_indices = [i for i in indices if response_df.iloc[i]['event'] == 1]
+        
+        n_censored = len(censored_indices)
+        n_uncensored = len(uncensored_indices)
+        
+        print(f"found {n_censored} censored and {n_uncensored} uncensored")
+        
+        # Only balance if there are more censored than uncensored samples
+        if n_censored > n_uncensored:
+            # Calculate split sizes for each group    
+            split_test_uncensored = int(test_split * n_uncensored)
+            split_val_uncensored = int(validation_split * n_uncensored)
+            
+            split_test_censored = split_test_uncensored
+            split_val_censored = split_val_uncensored
+            
+            # Split censored indices
+            test_censored = censored_indices[:split_test_censored]
+            val_censored = censored_indices[split_test_censored:split_test_censored+split_val_censored]
+            train_censored = censored_indices[split_test_censored+split_val_censored:n_uncensored]
+            
+            # Split uncensored indices
+            test_uncensored = uncensored_indices[:split_test_uncensored]
+            val_uncensored = uncensored_indices[split_test_uncensored:split_test_uncensored+split_val_uncensored]
+            train_uncensored = uncensored_indices[split_test_uncensored+split_val_uncensored:n_uncensored]
+            
+            # Combine and shuffle the splits
+            test_indices = test_censored + test_uncensored
+            val_indices = val_censored + val_uncensored
+            all_train_indices = train_censored + train_uncensored
+            
+            print(f"found {len(all_train_indices)} trains and {len(val_indices)} vals")
+            
+            np.random.seed(random_seed)
+            np.random.shuffle(test_indices)
+            np.random.shuffle(val_indices)
+            np.random.shuffle(all_train_indices)
+            
+            # Handle supervised training data split
+            if num_supervised_train_data == 'all':
+                sup_train_indices = all_train_indices
+                ssl_train_indices = []
+            else:
+                num_supervised_train_data = int(num_supervised_train_data)
+                sup_train_indices = all_train_indices[:num_supervised_train_data]
+                ssl_train_indices = all_train_indices[num_supervised_train_data:]
+            
+            return sup_train_indices, val_indices, test_indices, ssl_train_indices
+    
+    # Default behavior (original code) if no response_df or no balancing needed
+    split_val = int(validation_split * dataset_size)
+    split_test = int(test_split * dataset_size)
+    
     test_indices = []
     if test_split:
         test_indices = indices[:split_test] 
